@@ -1,0 +1,25 @@
+:80 {
+    reverse_proxy suitecrm:8080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        transport http {
+            read_timeout 120s
+            write_timeout 120s
+        }
+
+        flush_interval -1
+    }
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    log {
+        output stdout
+    }
+}

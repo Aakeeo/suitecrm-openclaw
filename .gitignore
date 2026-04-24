@@ -1,0 +1,16 @@
+.env
+.env.local
+*.log
+*.swp
+.DS_Store
+
+# Local editor / tool folders
+.idea/
+.vscode/
+.claude/
+
+# Volumes, dumps, and runtime state
+volumes/
+backups/
+*.sql.gz
+*.tar.gz

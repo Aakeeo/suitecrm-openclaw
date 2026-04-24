@@ -1,0 +1,142 @@
+# Same stack as docker-compose.yml but pulls pre-built images from GHCR
+# instead of building locally. Comes up in under a minute on a warm network.
+#
+#   docker compose -f docker-compose.prebuilt.yml up -d
+#
+# Pin IMAGE_TAG in .env to a specific release (e.g. v0.1.0); defaults to `latest`.
+
+services:
+  db:
+    image: mariadb:10.11
+    container_name: suitecrm-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASS}
+    volumes:
+      - db_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+      --max_allowed_packet=64M
+      --innodb_buffer_pool_size=256M
+      --innodb_log_file_size=64M
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  suitecrm:
+    image: ghcr.io/aakeeo/suitecrm-app:${IMAGE_TAG:-latest}
+    container_name: suitecrm-app
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      SITE_URL: ${SITE_URL}
+      ADMIN_USER: ${ADMIN_USER}
+      ADMIN_PASS: ${ADMIN_PASS}
+      OAUTH2_CLIENT_ID: ${OAUTH2_CLIENT_ID}
+      OAUTH2_CLIENT_SECRET: ${OAUTH2_CLIENT_SECRET}
+    volumes:
+      - suitecrm_data:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /var/www/html/.installed && wget -q --spider http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: suitecrm-caddy
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - suitecrm
+    restart: unless-stopped
+
+  openclaw-gateway:
+    image: ghcr.io/aakeeo/openclaw-suitecrm-agent:${IMAGE_TAG:-latest}
+    container_name: openclaw-gateway
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      TZ: ${OPENCLAW_TZ:-UTC}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
+      SUITECRM_URL: http://suitecrm:8080
+      SUITECRM_CLIENT_ID: ${OAUTH2_CLIENT_ID}
+      SUITECRM_CLIENT_SECRET: ${OAUTH2_CLIENT_SECRET}
+      SUITECRM_USER: ${ADMIN_USER}
+      SUITECRM_PASS: ${ADMIN_PASS}
+    volumes:
+      - openclaw_config:/home/node/.openclaw
+      - openclaw_workspace:/home/node/.openclaw/workspace
+      - ./openclaw/skills:/home/node/.openclaw/skills:ro
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+    init: true
+    command:
+      - node
+      - dist/index.js
+      - gateway
+      - --bind
+      - ${OPENCLAW_GATEWAY_BIND:-lan}
+      - --port
+      - "18789"
+      - --allow-unconfigured
+    depends_on:
+      suitecrm:
+        condition: service_healthy
+    restart: unless-stopped
+
+  openclaw-cli:
+    image: ghcr.io/aakeeo/openclaw-suitecrm-agent:${IMAGE_TAG:-latest}
+    container_name: openclaw-cli
+    network_mode: "service:openclaw-gateway"
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      TZ: ${OPENCLAW_TZ:-UTC}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      BROWSER: echo
+      SUITECRM_URL: http://suitecrm:8080
+      SUITECRM_CLIENT_ID: ${OAUTH2_CLIENT_ID}
+      SUITECRM_CLIENT_SECRET: ${OAUTH2_CLIENT_SECRET}
+      SUITECRM_USER: ${ADMIN_USER}
+      SUITECRM_PASS: ${ADMIN_PASS}
+    volumes:
+      - openclaw_config:/home/node/.openclaw
+      - openclaw_workspace:/home/node/.openclaw/workspace
+      - ./openclaw/skills:/home/node/.openclaw/skills:ro
+    stdin_open: true
+    tty: true
+    init: true
+    entrypoint: ["node", "dist/index.js"]
+    depends_on:
+      openclaw-gateway:
+        condition: service_started
+    profiles: ["cli"]
+
+volumes:
+  db_data:
+  suitecrm_data:
+  caddy_data:
+  caddy_config:
+  openclaw_config:
+  openclaw_workspace:
