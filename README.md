@@ -187,4 +187,6 @@ If you need a production SuiteCRM 8 implementation, custom modules, or an integr
 
 ## Licence
 
-MIT. SuiteCRM itself is AGPL-3.0 — see <https://github.com/salesagility/SuiteCRM-Core>.
+Our own code in this repo (Dockerfiles, compose, entrypoint, skill, examples, configs) is **MIT** — see [`LICENSE`](LICENSE).
+
+The published Docker images bundle SuiteCRM 8.9.2, which is **AGPL-3.0**. If you run the image as a network service, you must comply with AGPL-3.0 for the SuiteCRM parts. See [`NOTICES.md`](NOTICES.md) for the full breakdown.
